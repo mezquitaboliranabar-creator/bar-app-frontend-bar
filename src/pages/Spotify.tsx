@@ -66,7 +66,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "32px 20px",
     minHeight: "100vh",
     color: "#c3a24a",
-    fontFamily: "'Orbitron', sans-serif",
+    fontFamily: "'Orbitron', sans-aserif",
     position: "relative",
     overflowX: "hidden",
   },
