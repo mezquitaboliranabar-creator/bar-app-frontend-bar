@@ -52,10 +52,26 @@ export const barMusic = {
     return api.get(`/api/music/requests?${params.toString()}`);
   },
 
-  setRequestStatus: (id: string, status: RequestStatusAny, reason?: string) => {
-    // El backend espera minúsculas
+  // ✅ Actualiza estado usando la ruta correcta; normaliza a minúsculas.
+  //   Incluye fallback a /:id por si el backend tuviera ese alias.
+  setRequestStatus: async (
+    id: string,
+    status: RequestStatusAny,
+    reason?: string
+  ) => {
     const normalized = (status as string).toLowerCase() as RequestStatusLower;
-    return api.put(`/api/music/requests/${id}`, { status: normalized, reason });
+    try {
+      return await api.put(`/api/music/requests/${id}/status`, {
+        status: normalized,
+        reason,
+      });
+    } catch {
+      // Fallback (compatibilidad): some backends aceptan PUT /:id
+      return api.put(`/api/music/requests/${id}`, {
+        status: normalized,
+        reason,
+      });
+    }
   },
 
   // ---- Búsqueda (opcional staff) ----
