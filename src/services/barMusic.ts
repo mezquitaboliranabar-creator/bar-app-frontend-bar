@@ -1,4 +1,9 @@
+// src/services/barMusic.ts
 import { api } from "./api";
+
+export type RequestStatusUpper = "REJECTED" | "PLAYING" | "DONE";
+export type RequestStatusLower = "rejected" | "playing" | "done";
+type RequestStatusAny = RequestStatusUpper | RequestStatusLower;
 
 export const barMusic = {
   // ---- Auth / Devices / Settings ----
@@ -47,11 +52,11 @@ export const barMusic = {
     return api.get(`/api/music/requests?${params.toString()}`);
   },
 
-  setRequestStatus: (
-    id: string,
-    status: "REJECTED" | "DONE" | "PLAYING",
-    reason?: string
-  ) => api.put(`/api/music/requests/${id}`, { status, reason }),
+  setRequestStatus: (id: string, status: RequestStatusAny, reason?: string) => {
+    // El backend espera minúsculas
+    const normalized = (status as string).toLowerCase() as RequestStatusLower;
+    return api.put(`/api/music/requests/${id}`, { status: normalized, reason });
+  },
 
   // ---- Búsqueda (opcional staff) ----
   search: (q: string, market = "CO") =>

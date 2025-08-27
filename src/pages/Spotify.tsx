@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { barMusic } from "../services/barMusic";
-import { api } from "../services/api"; // para el resume de /play sin contexto
+import { api } from "../services/api";
 
 type Device = {
   id: string;
@@ -22,13 +22,17 @@ type SettingsResp = { ok: boolean; settings?: { preferredDeviceId?: string; pref
 type RequestsResp = { ok: boolean; items: SongRequest[]; total: number };
 type RequestStatus = "queued" | "approved" | "playing" | "rejected" | "done";
 
+/** Mesa puede venir como id (string) o poblada desde el backend */
+type MesaPopulada = { _id: string; numero?: number | string; nombre?: string; name?: string };
+type MesaRef = string | MesaPopulada;
+
 type SongRequest = {
   _id: string;
   trackUri: string;
   title: string;
   artist: string;
   imageUrl?: string;
-  requestedBy: { sessionId: string; mesaId?: string };
+  requestedBy: { sessionId: string; mesaId?: MesaRef };
   status: RequestStatus;
   votes: number;
   createdAt: string;
@@ -38,10 +42,7 @@ const API_URL = process.env.REACT_APP_API_URL || "";
 
 /* ====== Iconos SVG (gold, minimal) ====== */
 const iconProps = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "currentColor" } as const;
-
-const IconPlay = () => (
-  <svg {...iconProps}><path d="M8 5v14l11-7-11-7z" /></svg>
-);
+const IconPlay = () => <svg {...iconProps}><path d="M8 5v14l11-7-11-7z" /></svg>;
 const IconPause = () => (
   <svg {...iconProps}>
     <rect x="6" y="5" width="4" height="14" rx="1" />
@@ -78,7 +79,7 @@ const styles: Record<string, React.CSSProperties> = {
       "url('https://images.unsplash.com/photo-1597290282695-edc43d0e7129?q=80&w=1475&auto=format&fit=crop')",
     backgroundSize: "cover",
     backgroundPosition: "center",
-    filter: "blur(2px) brightness(0.6) contrast(0.95)",
+    filter: "blur(1px) brightness(0.75) contrast(1)",
     zIndex: -1,
   },
   overlay: {
@@ -89,8 +90,6 @@ const styles: Record<string, React.CSSProperties> = {
       "radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.7) 100%)",
     zIndex: -1,
   },
-
-  /* ===== Header centrado + back fijo a la izquierda ===== */
   headerWrap: {
     position: "relative",
     paddingTop: 8,
@@ -134,7 +133,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "18px",
     textAlign: "center",
   },
-
   grid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -180,12 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 6px 16px rgba(0,0,0,0.35)",
     transition: "transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease",
   },
-  row: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
+  row: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
   select: {
     background: "rgba(0,0,0,0.5)",
     color: "#e6d8a8",
@@ -194,21 +187,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 12px",
     minWidth: "260px",
   },
-  small: {
-    fontSize: "0.85rem",
-    color: "rgba(255,255,255,0.8)",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "separate",
-    borderSpacing: "0 10px",
-  },
-  th: {
-    textAlign: "left",
-    color: "rgba(255,215,128,0.9)",
-    fontWeight: 800,
-    padding: "0 8px",
-  },
+  small: { fontSize: "0.85rem", color: "rgba(255,255,255,0.8)" },
+  table: { width: "100%", borderCollapse: "separate", borderSpacing: "0 10px" },
+  th: { textAlign: "left", color: "rgba(255,215,128,0.9)", fontWeight: 800, padding: "0 8px" },
   td: {
     padding: "8px",
     background: "rgba(0,0,0,0.35)",
@@ -243,6 +224,36 @@ function msToMinSec(ms: number | undefined) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
+/* Helpers para matching flexible (por si la URI no coincide) */
+const norm = (s?: string) =>
+  (s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim();
+
+const matchesByText = (req: SongRequest, meta: { name?: string; artist?: string }) => {
+  const rt = norm(req.title);
+  const ra = norm(req.artist);
+  const nt = norm(meta.name);
+  const na = norm(meta.artist);
+  const titleOk = rt.includes(nt) || nt.includes(rt);
+  const artistOk = !na || ra.includes(na) || na.includes(ra);
+  return titleOk && artistOk;
+};
+
+/** Mostrar etiqueta amable para mesa (poblada o id) */
+function mesaLabel(mesa?: MesaRef): string {
+  if (!mesa) return "—";
+  if (typeof mesa === "string") return mesa; // fallback: ObjectId si no viene poblado
+  const { numero, nombre, name, _id } = mesa;
+  if (numero !== undefined && numero !== null && `${numero}`.trim() !== "") {
+    return `Mesa ${numero}`;
+  }
+  if (nombre && nombre.trim()) return nombre;
+  if (name && name.trim()) return name;
+  return _id || "—";
+}
+
 const Spotify: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [preferred, setPreferred] = useState<{ id?: string; name?: string }>({});
@@ -252,6 +263,8 @@ const Spotify: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [vol, setVol] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const lastMetaRef = useRef<{ uri?: string; name?: string; artist?: string } | null>(null);
 
   const activeDeviceId = useMemo(() => {
     const active = devices.find((d) => d.is_active)?.id;
@@ -265,6 +278,16 @@ const Spotify: React.FC = () => {
     queue?.currently_playing?.album?.images?.[0]?.url ||
     undefined;
 
+  const getNowMeta = (): { uri?: string; name?: string; artist?: string } => {
+    const t = current || queue?.currently_playing || null;
+    if (!t) return {};
+    return {
+      uri: t.uri,
+      name: t.name,
+      artist: (t.artists || []).map((a: any) => a.name).join(", "),
+    };
+  };
+
   const loadAll = async () => {
     try {
       setErr(null);
@@ -273,7 +296,8 @@ const Spotify: React.FC = () => {
         barMusic.getSettings() as Promise<SettingsResp>,
         barMusic.playerStatus() as Promise<StatusResp>,
         barMusic.playerQueue() as Promise<QueueResp>,
-        barMusic.requests("queued,approved,playing") as Promise<RequestsResp>,
+        // Solo pendientes (para que desaparezcan las reproducidas)
+        barMusic.requests("queued,approved") as Promise<RequestsResp>,
       ]);
       setDevices(devicesRes.devices || []);
       setPreferred({
@@ -298,7 +322,48 @@ const Spotify: React.FC = () => {
 
   useInterval(loadAll, 4000);
 
-  // acciones
+  /** Auto-sync robusto al cambiar Now Playing */
+  useEffect(() => {
+    const nowMeta = getNowMeta();
+    if (!nowMeta.uri && !nowMeta.name) return;
+
+    (async () => {
+      try {
+        const prevMeta = lastMetaRef.current;
+
+        // Si cambió el tema, cerramos todo lo que coincida con el anterior
+        if (prevMeta && (prevMeta.uri !== nowMeta.uri || norm(prevMeta.name) !== norm(nowMeta.name))) {
+          const toClose = (await barMusic.requests("queued,approved,playing")) as RequestsResp;
+          const victims = (toClose.items || []).filter(
+            (x) => x.trackUri === prevMeta.uri || matchesByText(x, prevMeta)
+          );
+          for (const v of victims) {
+            await barMusic.setRequestStatus(v._id, "DONE");
+          }
+        }
+
+        // Si hay solicitud de la canción actual en pending, márcala PLAYING
+        const pending = (await barMusic.requests("queued,approved")) as RequestsResp;
+        const candidates = (pending.items || []).filter(
+          (x) => x.trackUri === nowMeta.uri || matchesByText(x, nowMeta)
+        );
+        if (candidates.length) {
+          const pick = candidates.reduce((a, b) =>
+            new Date(a.createdAt).getTime() <= new Date(b.createdAt).getTime() ? a : b
+          );
+          await barMusic.setRequestStatus(pick._id, "PLAYING");
+        }
+
+        lastMetaRef.current = nowMeta;
+        await loadAll();
+      } catch {
+        /* silencioso */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.item?.uri, queue?.currently_playing?.uri]);
+
+  // acciones UI
   const loginSpotify = () => {
     if (!API_URL) return alert("Falta REACT_APP_API_URL en el frontend");
     window.open(`${API_URL}/api/music/spotify/login`, "_blank");
@@ -378,7 +443,7 @@ const Spotify: React.FC = () => {
       <div style={styles.background} />
       <div style={styles.overlay} />
 
-      {/* Header centrado con back a la izquierda */}
+      {/* Header */}
       <div style={styles.headerWrap}>
         <Link
           to="/"
@@ -574,7 +639,7 @@ const Spotify: React.FC = () => {
           </table>
         </div>
 
-        {/* Solicitudes de Clientes */}
+        {/* Solicitudes de Clientes (solo pendientes) */}
         <div style={styles.card}>
           <div style={styles.sectionTitle}>Solicitudes de Clientes</div>
           <table style={styles.table}>
@@ -592,7 +657,8 @@ const Spotify: React.FC = () => {
                 <tr key={r._id}>
                   <td style={styles.td}>{r.title}</td>
                   <td style={styles.td}>{r.artist}</td>
-                  <td style={styles.td}>{r.requestedBy?.mesaId || "—"}</td>
+                  {/* ✅ Mostrar número/nombre si viene poblado */}
+                  <td style={styles.td}>{mesaLabel(r.requestedBy?.mesaId)}</td>
                   <td style={styles.td}>{r.status}</td>
                   <td style={styles.td}>
                     <div style={styles.row}>
