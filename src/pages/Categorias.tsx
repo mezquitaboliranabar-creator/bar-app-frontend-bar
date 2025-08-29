@@ -70,6 +70,20 @@ export default function Categorias() {
     }
   };
 
+  // ⬇️ NUEVO: quitar imagen existente
+  const handleClearImage = async (catId: string) => {
+    try {
+      const actualizada = await actualizarCategoria(catId, {
+        nombre: categorias.find(c => c._id === catId)?.nombre || "",
+        imagen: "" // limpiar imagen (también funcionaría null si tu backend lo admite)
+      });
+      setCategorias((prev) => prev.map(c => (c._id === catId ? actualizada : c)));
+      setUrlInputs((prev) => ({ ...prev, [catId]: "" }));
+    } catch (err) {
+      console.error("❌ Error al quitar imagen:", err);
+    }
+  };
+
   return (
     <div className="cats-wrap">
       {/* estilos PC-first, responsive y consistentes con el Dashboard */}
@@ -273,6 +287,21 @@ export default function Categorias() {
                     <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
                 </button>
+                {/* ⬇️ NUEVO: quitar imagen actual si existe */}
+                {cat.imagen && (
+                  <button
+                    className="btn-icon"
+                    title="Quitar imagen de la categoría"
+                    aria-label={`Quitar imagen de ${cat.nombre}`}
+                    onClick={() => handleClearImage(cat._id)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                      <path d="M10 11v6M14 11v6"></path>
+                    </svg>
+                  </button>
+                )}
               </div>
 
               {/* Acciones */}

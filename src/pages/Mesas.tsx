@@ -1,3 +1,4 @@
+// src/pages/Mesas.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ROUTES from "../routes";
@@ -215,15 +216,12 @@ const Mesas: React.FC = () => {
       for (const m of data) {
         const prev = prevById[m._id];
         if (!prev) {
-          // nueva mesa (o primera carga) → marca cambio
           changes.push(m._id);
         } else if (prev.estado !== m.estado || prev.numero !== m.numero) {
-          // cambio relevante
           changes.push(m._id);
         }
       }
 
-      // actualiza pulse timestamps
       if (changes.length) {
         setJustChanged((jc) => {
           const now = Date.now();
@@ -233,16 +231,14 @@ const Mesas: React.FC = () => {
         });
       }
 
-      // guarda prev map y UI
       prevByIdRef.current = Object.fromEntries(data.map((m) => [m._id, m]));
       if (mountedRef.current) setMesas(data);
 
-      // limpieza simple de justChanged (evita crecer indef.)
       setJustChanged((jc) => {
         const now = Date.now();
         const copy: Record<string, number> = {};
         for (const [id, ts] of Object.entries(jc)) {
-          if (now - ts < changeTTL * 2) copy[id] = ts; // margen
+          if (now - ts < changeTTL * 2) copy[id] = ts;
         }
         return copy;
       });
@@ -256,15 +252,10 @@ const Mesas: React.FC = () => {
   // Cargar al montar
   useEffect(() => { fetchMesasSafe(); }, []);
 
-  // Auto-refresh: intervalo + focus/visibilidad/online (sin tocar backend)
+  // Auto-refresh
   useEffect(() => {
     let interval: number | undefined;
-
-    const tick = () => {
-      if (document.hidden) return;
-      fetchMesasSafe({ silent: true });
-    };
-
+    const tick = () => { if (!document.hidden) fetchMesasSafe({ silent: true }); };
     interval = window.setInterval(tick, REFRESH_MS);
 
     const onVis = () => { if (!document.hidden) fetchMesasSafe({ silent: true }); };
@@ -324,7 +315,7 @@ const Mesas: React.FC = () => {
     try {
       setClosingId(mesa._id);
       setError("");
-      const resp = await apiMesas.cerrarMesa(mesa._id); // { ok, closedCount, mesa }
+      const resp = await apiMesas.cerrarMesa(mesa._id);
       setMesas((prev) =>
         prev.map((m) => (m._id === mesa._id ? { ...m, estado: resp.mesa.estado } : m))
       );
@@ -370,7 +361,7 @@ const Mesas: React.FC = () => {
         <span>Total: <strong>{mesas.length}</strong></span>
       </div>
 
-      {/* ← Volver + Filtros + Búsqueda */}
+      {/* ← Volver + Filtros + Búsqueda + Crear mesa */}
       <div style={styles.actionsBar}>
         <Link to={ROUTES.dashboard}>
           <button
@@ -395,6 +386,30 @@ const Mesas: React.FC = () => {
           onChange={(e) => setBusqueda(e.target.value)}
           style={styles.input}
         />
+
+        {/* === Crear mesa === */}
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          step={1}
+          placeholder="Mesa #"
+          value={numero}
+          onChange={(e) => setNumero(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCrearMesa(); }}
+          style={styles.input}
+          title="Número de la nueva mesa"
+        />
+        <button
+          style={styles.button}
+          disabled={loading}
+          onClick={handleCrearMesa}
+          onMouseOver={(e) => handleHover(e, true)}
+          onMouseOut={(e) => handleHover(e, false)}
+          title="Crear nueva mesa"
+        >
+          {loading ? "Creando..." : "Crear mesa"}
+        </button>
       </div>
 
       {error && <p style={styles.error}>{error}</p>}
